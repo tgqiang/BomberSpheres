@@ -26,6 +26,8 @@ public class Player : MonoBehaviour {
 
 	public GameObject playerExplosionObject;
 	float explosionCharge;
+	float chargeLimit;
+	bool voided;
 	Explosion explosion;
 	Energy playerChargeEnergy;
 
@@ -40,6 +42,7 @@ public class Player : MonoBehaviour {
 		itemHeldDuration = 0;
 		explosionCharge = 0;
 		cooldown = 0;
+		voided = false;
 		speedDeductionInterval = (speed - MIN_SPEED) / 50f;		// 50 is magic number
 		explosion = playerExplosionObject.GetComponent<Explosion> ();
 		rb2d = GetComponent<Rigidbody2D> ();
@@ -49,14 +52,17 @@ public class Player : MonoBehaviour {
 	
 	// Update is called once per frame
 	void Update () {
+		//print ("Player " + playerNum + " attack: " + voided);
+
 		float deltaTime = Time.deltaTime;
 
 		if (cooldown > 0) {
 			cooldown -= deltaTime;
 		} else {
 			cooldown = 0;
-			UpdateControllerForPlayer ();
 		}
+
+		UpdateControllerForPlayer ();
 
 		if (hasItem) {
 			itemHeldDuration += deltaTime;
@@ -85,34 +91,60 @@ public class Player : MonoBehaviour {
 	}
 
 	void UpdateMovementWithInputDevice(InputDevice inputDevice) {
-		float x = inputDevice.LeftStickX.Value;
-		float y = inputDevice.LeftStickY.Value;
+		if (cooldown <= 0) {
+			float x = inputDevice.LeftStickX.Value;
+			float y = inputDevice.LeftStickY.Value;
 
-		Vector2 movement = new Vector2 (x, y).normalized;
+			Vector2 movement = new Vector2 (x, y).normalized;
 
-		rb2d.MovePosition (new Vector2(transform.position.x + movement.x * speed, transform.position.y + movement.y * speed));
+			rb2d.MovePosition (new Vector2 (transform.position.x + movement.x * speed, transform.position.y + movement.y * speed));
+		}
 	}
 
 	void TriggerExplosionWithInputDevice(InputDevice inputDevice) {
-		if (inputDevice.RightTrigger.IsPressed) {
-			print ("Charging explosion.");
+		if (inputDevice.RightTrigger.IsPressed && !voided && cooldown <= 0) {
+			//print ("Charging.");
 			if (explosionCharge < Explosion.DIFFERENCE_SCALE) {
 				explosionCharge += 0.1f;
 				playerChargeEnergy.Modify (0.1f);
 				speed -= speedDeductionInterval;
 			} else {
+				//print ("Charging maxed.");
 				explosionCharge = Explosion.DIFFERENCE_SCALE;
+				chargeLimit += Time.deltaTime;
 				speed = MIN_SPEED;
+
+				if (chargeLimit >= 2.0f) {
+					//print ("Overcharging.");
+					voided = true;
+					explosionCharge = 0;
+					playerChargeEnergy.Set (0);
+					chargeLimit = 0;
+					cooldown = explosion.ATTACK_DURATION;
+				}
 			}
 		}
 
-		if (inputDevice.RightTrigger.WasReleased) {
-			print ("Releasing explosion.");
-			explosion.TriggerExplosion (explosionCharge);
-			explosionCharge = 0;
-			playerChargeEnergy.Set (0);
+		if (inputDevice.RightTrigger.IsPressed && voided) {
+			//print ("Explosion charge voided.");
 			speed = START_SPEED;
-			cooldown = explosion.ATTACK_DURATION;
+		}
+
+		if (inputDevice.RightTrigger.WasReleased) {
+			//print ("Right trigger released.");
+			if (voided) {
+				//print ("Charging reset.");
+				voided = false;
+				speed = START_SPEED;
+				cooldown = explosion.ATTACK_DURATION;
+			} else if (cooldown <= 0) {
+				//print ("Releasing explosion.");
+				explosion.TriggerExplosion (explosionCharge);
+				explosionCharge = 0;
+				playerChargeEnergy.Set (0);
+				speed = START_SPEED;
+				cooldown = explosion.ATTACK_DURATION;
+			}
 		}
 	}
 
